@@ -11,6 +11,8 @@ typedef struct {
 	guint32 n_columns;
 	GtkTreeStore *tree_store;
 	GtkTreeIter *last_iter;
+	guint32 n_max_cached_iters;
+	GtkTreeIter **iter_cache;
 } Global;
 
 typedef gboolean (* LineCallback)(Global *global);
@@ -117,7 +119,7 @@ static gboolean data_init(Global *global)
 			if(!fgets(global->line_buffer,
 				global->max_line_length, global->f))
 				return FALSE;
-			g_strstrip(global->line_buffer);
+			g_strchomp(global->line_buffer);
 			lt->callback(global);
 		}
 	}
@@ -142,6 +144,7 @@ static Global *global_init(int argc, char **argv)
 
 	global = g_new0(Global, 1);
 	global->max_line_length = 2048;
+	global->n_max_cached_iters = 42;
 
 	for(i = 1; i < argc; i ++) {
 		if((strcmp(argv[i], "-l") == 0) && (++ i < argc)) {
@@ -163,6 +166,7 @@ static Global *global_init(int argc, char **argv)
 	}
 
 	global->line_buffer = g_new0(gchar, global->max_line_length);
+	global->iter_cache = g_new0(GtkTreeIter *, global->n_max_cached_iters);
 	if(global->f == NULL)
 		global->f = stdin;
 
@@ -174,6 +178,7 @@ static void global_cleanup(Global *global)
 	if((global->f != NULL) && (global->f != stdin))
 		fclose(global->f);
 	g_free(global->line_buffer);
+	g_free(global->iter_cache);
 	g_free(global);
 }
 
@@ -246,6 +251,28 @@ static gboolean line_path_cb(Global *global)
 
 static gboolean line_indent_cb(Global *global)
 {
+	guint32 level = 0;
+	gchar *text;
+	GtkTreeIter *iter;
+
+	text = global->line_buffer;
+	while(*text == ' ') {
+		text ++;
+		level ++;
+	}
+	g_return_val_if_fail(level < global->n_max_cached_iters, FALSE);
+
+	iter = create_node(global, text, (level == 0) ? NULL :
+		global->iter_cache[level - 1]);
+
+	if(global->iter_cache[level])
+		g_free(global->iter_cache[level]);
+	global->iter_cache[level] = iter;
+	while((++ level < global->n_max_cached_iters) &&
+		(global->iter_cache[level] != NULL)) {
+		g_free(global->iter_cache[level]);
+		global->iter_cache[level] = NULL;
+	}
 	return TRUE;
 }
 
