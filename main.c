@@ -13,6 +13,7 @@ typedef struct {
 	GtkTreeIter *last_iter;
 	guint32 n_max_cached_iters;
 	GtkTreeIter **iter_cache;
+	gchar indent_character;
 } Global;
 
 typedef gboolean (* LineCallback)(Global *global);
@@ -136,6 +137,20 @@ static LineType *find_line_type(const gchar *tname)
 	return NULL;
 }
 
+static void show_help(const gchar *progname)
+{
+	g_printerr(
+		"usage: %s -l <linedef> [<options>]\n\n"
+		"possible options:\n"
+		"\t-h            show this help message\n"
+		"\t-l <linedef>  line type definition, one of:\n"
+		"\t\tpath        e.g. '/foo/bar'\n"
+		"\t\tindent      e.g. 'bla' or ' blubb'\n"
+		"\t\tvalue       can't be the first line type definition\n"
+		"\t-i <char>     change indention character (default: space)\n"
+		"", progname);
+}
+
 static Global *global_init(int argc, char **argv)
 {
 	Global *global;
@@ -145,9 +160,13 @@ static Global *global_init(int argc, char **argv)
 	global = g_new0(Global, 1);
 	global->max_line_length = 2048;
 	global->n_max_cached_iters = 42;
+	global->indent_character = ' ';
 
 	for(i = 1; i < argc; i ++) {
-		if((strcmp(argv[i], "-l") == 0) && (++ i < argc)) {
+		if(strcmp(argv[i], "-h") == 0) {
+			show_help(argv[0]);
+			exit(EXIT_FAILURE);
+		} else if((strcmp(argv[i], "-l") == 0) && (++ i < argc)) {
 			lt = find_line_type(argv[i]);
 			if(lt == NULL) {
 				g_warning("%s: unknown line type '%s'", argv[0], argv[i]);
@@ -156,6 +175,8 @@ static Global *global_init(int argc, char **argv)
 			global->line_defs = g_slist_append(global->line_defs, lt);
 			global->n_columns = MIN(N_COLUMNS,
 				MAX(global->n_columns, lt->n_cols));
+		} else if((strcmp(argv[i], "-i") == 0) && (++ i < argc)) {
+			global->indent_character = argv[i][0];
 		} else {
 			g_warning("%s: unknown option '%s'\n", argv[0], argv[i]);
 		}
@@ -256,7 +277,7 @@ static gboolean line_indent_cb(Global *global)
 	GtkTreeIter *iter;
 
 	text = global->line_buffer;
-	while(*text == ' ') {
+	while(*text == global->indent_character) {
 		text ++;
 		level ++;
 	}
@@ -278,6 +299,8 @@ static gboolean line_indent_cb(Global *global)
 
 static gboolean line_value_cb(Global *global)
 {
+	if(global->last_iter == NULL)
+		return FALSE;
 	gtk_tree_store_set(global->tree_store, global->last_iter,
 		COL_VALUE, g_strdup(global->line_buffer),
 		-1);
